@@ -16,16 +16,16 @@ const USERS = [
 const SUBS = ["Data Structures","Operating Systems","DBMS","Computer Networks","Engineering Maths"];
 const CC = ["#8b5cf6","#10b981","#f59e0b","#3b82f6","#f43f5e","#ec4899"];
 const STUDENTS = [
-  {rollNo:"CSE21001",name:"Rahul Sharma",   cgpa:8.4},
-  {rollNo:"CSE21002",name:"Priya Patel",    cgpa:9.1},
-  {rollNo:"CSE21003",name:"Amit Kumar",     cgpa:7.8},
-  {rollNo:"CSE21004",name:"Sneha Verma",    cgpa:8.9},
-  {rollNo:"CSE21005",name:"Ravi Singh",     cgpa:7.2},
-  {rollNo:"CSE21006",name:"Anjali Gupta",   cgpa:8.6},
-  {rollNo:"CSE21007",name:"Vikram Joshi",   cgpa:6.9},
-  {rollNo:"CSE21008",name:"Nisha Tiwari",   cgpa:9.3},
-  {rollNo:"CSE21009",name:"Saurabh Mishra", cgpa:7.5},
-  {rollNo:"CSE21010",name:"Divya Yadav",    cgpa:8.0},
+  {rollNo:"CSE21001",name:"Rahul Sharma",   cgpa:8.4, section:"A"},
+  {rollNo:"CSE21002",name:"Priya Patel",    cgpa:9.1, section:"A"},
+  {rollNo:"CSE21003",name:"Amit Kumar",     cgpa:7.8, section:"A"},
+  {rollNo:"CSE21004",name:"Sneha Verma",    cgpa:8.9, section:"B"},
+  {rollNo:"CSE21005",name:"Ravi Singh",     cgpa:7.2, section:"B"},
+  {rollNo:"CSE21006",name:"Anjali Gupta",   cgpa:8.6, section:"B"},
+  {rollNo:"CSE21007",name:"Vikram Joshi",   cgpa:6.9, section:"C"},
+  {rollNo:"CSE21008",name:"Nisha Tiwari",   cgpa:9.3, section:"C"},
+  {rollNo:"CSE21009",name:"Saurabh Mishra", cgpa:7.5, section:"D"},
+  {rollNo:"CSE21010",name:"Divya Yadav",    cgpa:8.0, section:"D"},
 ];
 const INIT = {
   notices:[
@@ -86,6 +86,9 @@ const INIT = {
     {id:4,text:"Revise CN Transport Layer",sub:"Computer Networks",due:"2026-03-15",done:false,pri:"high"},
   ],
   students: STUDENTS,
+  subjects: [...SUBS],
+  users: [...USERS],
+  collegeInfo: { name:"SSIPMT", address:"Raipur, Chhattisgarh", phone:"0771-2443311", email:"info@ssipmt.ac.in", principal:"Dr. R.K. Sharma", established:"1999", university:"CSVTU Bhilai", examDates:"March 15-22, 2026", academicYear:"2025-2026", departments:"CSE, IT, ECE, ME, Civil, MBA" },
 };
  
 /* ═══════════════════════════════════════════
@@ -590,6 +593,10 @@ const NAV={
     {id:"a_pyq", l:"PYQs",       n:"PYQs",    i:"folder",  s:"Content"},
     {id:"a_tt",  l:"Timetable",  n:"Timetable",i:"calendar",s:"Content"},
     {id:"a_fee", l:"Fees",       n:"Fees",    i:"credit",  s:"Content"},
+    {id:"a_stu", l:"Students",   n:"Students",i:"users",   s:"Data Setup"},
+    {id:"a_umg", l:"Manage Users",n:"Users",  i:"shield",  s:"Data Setup"},
+    {id:"a_col", l:"College Info",n:"College", i:"globe",   s:"Data Setup"},
+    {id:"a_sub", l:"Subjects",   n:"Subjects",i:"book",    s:"Data Setup"},
     {id:"a_usr", l:"Users",      n:"Users",   i:"users",   s:"System"},
     {id:"a_mrk", l:"Marks",      n:"Marks",   i:"chart",   s:"System"},
   ],
@@ -744,7 +751,7 @@ export default function App() {
           
           {/* FOOTER */}
           <div style={{textAlign:"center", paddingBottom:"20px", fontSize:"12px", color:"var(--T3)"}}>
-            Made by Moi
+            Made with <span style={{color:"#f43f5e"}}>❤️</span> by <span style={{color:"var(--P)",fontWeight:700}}>Moi</span>
           </div>
         </div>
  
@@ -802,6 +809,8 @@ function Router({page,ctx}) {
     a_pyq:<AdminPYQ ctx={ctx}/>,a_tt:<AdminTT ctx={ctx}/>,
     a_fee:<AdminFees ctx={ctx}/>,a_usr:<AdminUsers/>,
     a_mrk:<AdminMarks ctx={ctx}/>,
+    a_stu:<AdminStudents ctx={ctx}/>,a_umg:<AdminManageUsers ctx={ctx}/>,
+    a_col:<AdminCollegeInfo ctx={ctx}/>,a_sub:<AdminSubjects ctx={ctx}/>,
   };
   return map[page]||<Dash ctx={ctx}/>;
 }
@@ -1218,14 +1227,14 @@ function Ntc({ctx:{data}}) {
       {list.map(n=>(
         <div key={n.id} className={`nc ${(n.cat||"general").toLowerCase()}`} onClick={()=>setOpen(open===n.id?null:n.id)}>
           <div className="r jb g8 mb6">
-            <span className="fw7 f14">{n.title}</span>
+            <span className="fw7 f14">{n.title}{n.img&&<span className="bd bb f9" style={{marginLeft:6}}>📷</span>}</span>
             <div className="r g5">
               {n.imp&&<span className="bd by f9">⚠ Imp</span>}
               <span className={`bd ${n.cat==="Exam"?"br":n.cat==="Event"?"bp":"by"} f9`}>{n.cat}</span>
             </div>
           </div>
           <div className="r g8 c2 f11"><span>{n.author}</span><span>·</span><span>{n.date}</span></div>
-          {open===n.id&&<div className="nc-body">{n.body}</div>}
+          {open===n.id&&<div className="nc-body">{n.body}{n.img&&<img src={n.img} alt="attachment" style={{maxWidth:"100%",borderRadius:10,marginTop:10,border:"1.5px solid var(--bdr)"}}/> }</div>}
         </div>
       ))}
       {list.length===0&&<div className="tc c2 f13" style={{padding:30}}>No notices in this category.</div>}
@@ -1644,16 +1653,19 @@ function TeachAtt({ctx:{data,setData,notify}}) {
   const [sub,setSub]=useState("Data Structures");
   const [att,setAtt]=useState({});
   const [saved,setSaved]=useState(false);
-  const present=data.students.filter(s=>att[s.rollNo]!=="A").length;
+  const [sec,setSec]=useState("All");
+  const subs=data.subjects||SUBS;
+  const filtered=sec==="All"?data.students:data.students.filter(s=>s.section===sec);
+  const present=filtered.filter(s=>att[s.rollNo]!=="A").length;
  
   const markAll=v=>{
-    const o={};
-    data.students.forEach(s=>{o[s.rollNo]=v;});
+    const o={...att};
+    filtered.forEach(s=>{o[s.rollNo]=v;});
     setAtt(o);
   };
  
   const submit=()=>{
-    data.students.forEach(s=>{
+    filtered.forEach(s=>{
       const isP=att[s.rollNo]!=="A";
       setData(prev=>{
         const a={...prev.attendance};
@@ -1671,16 +1683,26 @@ function TeachAtt({ctx:{data,setData,notify}}) {
     <div>
       <div className="card mb16">
         <div className="r jb w g12 mb16">
-          <div className="fld" style={{marginBottom:0}}>
-            <label className="lbl">Subject</label>
-            <select className="inp" style={{width:210}} value={sub} onChange={e=>{setSub(e.target.value);setSaved(false);setAtt({});}}>
-              {SUBS.map(s=><option key={s}>{s}</option>)}
-            </select>
+          <div className="r g12 w">
+            <div className="fld" style={{marginBottom:0}}>
+              <label className="lbl">Subject</label>
+              <select className="inp" style={{width:210}} value={sub} onChange={e=>{setSub(e.target.value);setSaved(false);setAtt({});}}>
+                {subs.map(s=><option key={s}>{s}</option>)}
+              </select>
+            </div>
+            <div className="fld" style={{marginBottom:0}}>
+              <label className="lbl">Section</label>
+              <div className="r g4">
+                {["All","A","B","C","D"].map(s=>(
+                  <button key={s} className={`btn btn-xs ${sec===s?"btn-p":"btn-gh"}`} onClick={()=>setSec(s)}>{s}</button>
+                ))}
+              </div>
+            </div>
           </div>
           <div style={{background:"var(--PL)",border:"1.5px solid var(--PM)",borderRadius:12,padding:"10px 18px",display:"flex",gap:16,alignItems:"center"}}>
             <div className="tc"><div className="fw8 f22 cg">{present}</div><div className="c2 f10">Present</div></div>
             <div className="c3 f14">/</div>
-            <div className="tc"><div className="fw8 f22">{data.students.length}</div><div className="c2 f10">Total</div></div>
+            <div className="tc"><div className="fw8 f22">{filtered.length}</div><div className="c2 f10">Total</div></div>
           </div>
         </div>
         <div className="r g8 mb16">
@@ -1688,12 +1710,12 @@ function TeachAtt({ctx:{data,setData,notify}}) {
           <button className="btn btn-d btn-sm" onClick={()=>markAll("A")}><Ico n="x" s={13}/>All Absent</button>
         </div>
         {saved&&<div className="al al-s mb12"><Ico n="check" s={14}/>Attendance saved for <strong>{sub}</strong></div>}
-        {data.students.map(s=>(
+        {filtered.map(s=>(
           <div key={s.rollNo} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:"1px solid var(--bdr)"}}>
             <div className="r g10">
               <div className="av" style={{width:30,height:30,minWidth:30,fontSize:11}}>{s.name[0]}</div>
               <div>
-                <div className="fw6 f13">{s.name}</div>
+                <div className="fw6 f13">{s.name} <span className="bd bz f9">Sec {s.section}</span></div>
                 <div className="c3 f11">{s.rollNo}</div>
               </div>
             </div>
@@ -1703,7 +1725,7 @@ function TeachAtt({ctx:{data,setData,notify}}) {
             </div>
           </div>
         ))}
-        <button className="btn btn-p mt16" onClick={submit}><Ico n="check" s={14}/>Submit — {present}/{data.students.length} present</button>
+        <button className="btn btn-p mt16" onClick={submit}><Ico n="check" s={14}/>Submit — {present}/{filtered.length} present</button>
       </div>
     </div>
   );
@@ -1824,8 +1846,16 @@ function TeachMarks({ctx:{data,setData,notify}}) {
    TEACHER / HOD: POST NOTICE
 ═══════════════════════════════════════════ */
 function PostNtc({ctx:{user,data,setData,notify}}) {
-  const [form,setForm]=useState({title:"",body:"",cat:"Exam",imp:false});
+  const [form,setForm]=useState({title:"",body:"",cat:"Exam",imp:false,img:""});
   const del=id=>{setData(p=>({...p,notices:p.notices.filter(n=>n.id!==id)}));notify("Notice deleted","e");};
+  const handleImg=e=>{
+    const file=e.target.files[0];
+    if(!file)return;
+    if(file.size>50*1024*1024){notify("File too large (max 50MB)","e");return;}
+    const reader=new FileReader();
+    reader.onload=ev=>setForm(f=>({...f,img:ev.target.result}));
+    reader.readAsDataURL(file);
+  };
   return(
     <div>
       <div className="card mb16">
@@ -1844,11 +1874,16 @@ function PostNtc({ctx:{user,data,setData,notify}}) {
             <label htmlFor="imp" className="lbl" style={{marginBottom:0,cursor:"pointer"}}>Mark as Important</label>
           </div>
         </div>
+        <div className="fld">
+          <label className="lbl">Attach Image (optional)</label>
+          <input type="file" accept=".jpg,.jpeg,.png" onChange={handleImg} className="inp" style={{padding:"7px 10px"}}/>
+          {form.img&&<div className="mt8"><img src={form.img} alt="preview" style={{maxWidth:200,borderRadius:10,border:"1.5px solid var(--bdr)"}}/><button className="btn btn-d btn-xs mt6" onClick={()=>setForm(f=>({...f,img:""}))}><Ico n="x" s={11}/>Remove</button></div>}
+        </div>
         <button className="btn btn-p" onClick={()=>{
           if(!form.title.trim())return;
           setData(p=>({...p,notices:[{id:Date.now(),...form,date:now(),author:user.name},...p.notices]}));
           notify("Notice posted!");
-          setForm({title:"",body:"",cat:"Exam",imp:false});
+          setForm({title:"",body:"",cat:"Exam",imp:false,img:""});
         }}><Ico n="bell" s={14}/>Post Notice</button>
       </div>
  
@@ -1857,7 +1892,7 @@ function PostNtc({ctx:{user,data,setData,notify}}) {
         {data.notices.map(n=>(
           <div key={n.id} className="r jb g8" style={{padding:"11px 0",borderBottom:"1px solid var(--bdr)"}}>
             <div>
-              <div className="fw6 f13">{n.title}</div>
+              <div className="fw6 f13">{n.title}{n.img&&<span className="bd bb f9" style={{marginLeft:6}}>📷 Image</span>}</div>
               <div className="c2 f11 mt4">{n.author} · {n.date}</div>
             </div>
             <div className="r g6">
@@ -2106,7 +2141,15 @@ function ADash({user,data,setPage}) {
    ADMIN: NOTICES
 ═══════════════════════════════════════════ */
 function AdminNtc({ctx:{data,setData,notify}}) {
-  const [form,setForm]=useState({title:"",body:"",cat:"Exam",imp:false});
+  const [form,setForm]=useState({title:"",body:"",cat:"Exam",imp:false,img:""});
+  const handleImg=e=>{
+    const file=e.target.files[0];
+    if(!file)return;
+    if(file.size>50*1024*1024){notify("File too large (max 50MB)","e");return;}
+    const reader=new FileReader();
+    reader.onload=ev=>setForm(f=>({...f,img:ev.target.result}));
+    reader.readAsDataURL(file);
+  };
   return(
     <div>
       <div className="card mb16">
@@ -2125,10 +2168,15 @@ function AdminNtc({ctx:{data,setData,notify}}) {
             <label className="lbl" style={{marginBottom:0}}>Important</label>
           </div>
         </div>
+        <div className="fld">
+          <label className="lbl">Attach Image (optional)</label>
+          <input type="file" accept=".jpg,.jpeg,.png" onChange={handleImg} className="inp" style={{padding:"7px 10px"}}/>
+          {form.img&&<div className="mt8"><img src={form.img} alt="preview" style={{maxWidth:200,borderRadius:10,border:"1.5px solid var(--bdr)"}}/><button className="btn btn-d btn-xs mt6" onClick={()=>setForm(f=>({...f,img:""}))}><Ico n="x" s={11}/>Remove</button></div>}
+        </div>
         <button className="btn btn-p" onClick={()=>{
           if(!form.title.trim())return;
           setData(p=>({...p,notices:[{id:Date.now(),...form,date:now(),author:"Admin"},...p.notices]}));
-          notify("Notice added!");setForm({title:"",body:"",cat:"Exam",imp:false});
+          notify("Notice added!");setForm({title:"",body:"",cat:"Exam",imp:false,img:""});
         }}><Ico n="plus" s={13}/>Add Notice</button>
       </div>
       <div className="card tw">
@@ -2137,7 +2185,7 @@ function AdminNtc({ctx:{data,setData,notify}}) {
           <tbody>
             {data.notices.map(n=>(
               <tr key={n.id}>
-                <td className="fw6">{n.title}</td>
+                <td className="fw6">{n.title}{n.img&&<span className="bd bb f9" style={{marginLeft:6}}>📷</span>}</td>
                 <td className="c2">{n.author}</td>
                 <td className="c2">{n.date}</td>
                 <td><span className="bd by">{n.cat}</span></td>
@@ -2365,6 +2413,236 @@ function AdminMarks({ctx:{data}}) {
           )}
         </tbody>
       </table>
+    </div>
+  );
+}
+ 
+/* ═══════════════════════════════════════════
+   ADMIN: STUDENTS (section-wise)
+═══════════════════════════════════════════ */
+function AdminStudents({ctx:{data,setData,notify}}) {
+  const [sec,setSec]=useState("All");
+  const [form,setForm]=useState({name:"",rollNo:"",email:"",phone:"",section:"A",semester:5,dept:"CSE",cgpa:""});
+  const filtered=sec==="All"?data.students:data.students.filter(s=>s.section===sec);
+  const add=()=>{
+    if(!form.name.trim()||!form.rollNo.trim())return;
+    if(data.students.find(s=>s.rollNo===form.rollNo)){notify("Roll No already exists!","e");return;}
+    setData(p=>({...p,students:[...p.students,{...form,cgpa:parseFloat(form.cgpa)||0}]}));
+    notify("Student added!");
+    setForm({name:"",rollNo:"",email:"",phone:"",section:"A",semester:5,dept:"CSE",cgpa:""});
+  };
+  const del=rollNo=>{setData(p=>({...p,students:p.students.filter(s=>s.rollNo!==rollNo)}));notify("Student removed","e");};
+  return(
+    <div>
+      <div className="card mb16">
+        <div className="ct"><Ico n="plus" s={16} col="var(--P)"/>Add New Student</div>
+        <div className="g2">
+          <div className="fld"><label className="lbl">Full Name</label><input className="inp" placeholder="Student name" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}/></div>
+          <div className="fld"><label className="lbl">Roll No</label><input className="inp" placeholder="CSE21011" value={form.rollNo} onChange={e=>setForm(f=>({...f,rollNo:e.target.value}))}/></div>
+          <div className="fld"><label className="lbl">Email</label><input className="inp" placeholder="email@ssipmt.ac.in" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))}/></div>
+          <div className="fld"><label className="lbl">Phone</label><input className="inp" placeholder="9876543210" value={form.phone} onChange={e=>setForm(f=>({...f,phone:e.target.value}))}/></div>
+          <div className="fld"><label className="lbl">Section</label><select className="inp" value={form.section} onChange={e=>setForm(f=>({...f,section:e.target.value}))}>{["A","B","C","D"].map(s=><option key={s}>{s}</option>)}</select></div>
+          <div className="fld"><label className="lbl">Semester</label><select className="inp" value={form.semester} onChange={e=>setForm(f=>({...f,semester:+e.target.value}))}>{[1,2,3,4,5,6,7,8].map(s=><option key={s} value={s}>Sem {s}</option>)}</select></div>
+          <div className="fld"><label className="lbl">Department</label><input className="inp" value={form.dept} onChange={e=>setForm(f=>({...f,dept:e.target.value}))}/></div>
+          <div className="fld"><label className="lbl">CGPA</label><input type="number" step="0.1" min="0" max="10" className="inp" placeholder="8.5" value={form.cgpa} onChange={e=>setForm(f=>({...f,cgpa:e.target.value}))}/></div>
+        </div>
+        <button className="btn btn-p" onClick={add}><Ico n="plus" s={13}/>Add Student</button>
+      </div>
+ 
+      <div className="card tw">
+        <div className="r jb w g8 mb14">
+          <div className="ct" style={{marginBottom:0}}><Ico n="users" s={16} col="var(--P)"/>Students ({filtered.length})</div>
+          <div className="r g4">
+            {["All","A","B","C","D"].map(s=>(
+              <button key={s} className={`btn btn-xs ${sec===s?"btn-p":"btn-gh"}`} onClick={()=>setSec(s)}>{s==="All"?"All Sections":"Sec "+s}</button>
+            ))}
+          </div>
+        </div>
+        <table>
+          <thead><tr><th>Roll No</th><th>Name</th><th>Sec</th><th>Sem</th><th>Dept</th><th>CGPA</th><th>Action</th></tr></thead>
+          <tbody>
+            {filtered.map(s=>(
+              <tr key={s.rollNo}>
+                <td className="fw6 cp">{s.rollNo}</td>
+                <td className="fw6">{s.name}</td>
+                <td><span className="bd bp">{s.section}</span></td>
+                <td className="c2">Sem {s.semester||5}</td>
+                <td className="c2">{s.dept||"CSE"}</td>
+                <td><span className="bd bg">{s.cgpa}</span></td>
+                <td><button className="btn btn-d btn-xs" onClick={()=>del(s.rollNo)}><Ico n="trash" s={11}/></button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+ 
+/* ═══════════════════════════════════════════
+   ADMIN: MANAGE USERS (CRUD)
+═══════════════════════════════════════════ */
+function AdminManageUsers({ctx:{data,setData,notify,setModal}}) {
+  const users=data.users||USERS;
+  const [editId,setEditId]=useState(null);
+  const blank={name:"",email:"",password:"",role:"student",dept:"CSE",section:"A",semester:5,rollNo:"",phone:"",subject:""};
+  const [form,setForm]=useState({...blank});
+ 
+  const save=()=>{
+    if(!form.name.trim()||!form.email.trim())return;
+    if(editId){
+      setData(p=>({...p,users:p.users.map(u=>u.id===editId?{...u,...form}:u)}));
+      notify("User updated!");
+    } else {
+      setData(p=>({...p,users:[...p.users,{id:Date.now(),...form}]}));
+      notify("User added!");
+    }
+    setForm({...blank});setEditId(null);setModal(null);
+  };
+  const del=id=>{setData(p=>({...p,users:p.users.filter(u=>u.id!==id)}));notify("User deleted","e");};
+  const edit=u=>{setForm({name:u.name,email:u.email,password:u.password||"",role:u.role,dept:u.dept||"",section:u.section||"A",semester:u.semester||5,rollNo:u.rollNo||"",phone:u.phone||"",subject:u.subject||""});setEditId(u.id);};
+ 
+  const formUI=(
+    <div>
+      <div className="g2">
+        <div className="fld"><label className="lbl">Name</label><input className="inp" value={form.name} onChange={e=>setForm(f=>({...f,name:e.target.value}))}/></div>
+        <div className="fld"><label className="lbl">Email</label><input className="inp" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))}/></div>
+        <div className="fld"><label className="lbl">Password</label><input className="inp" type="password" value={form.password} onChange={e=>setForm(f=>({...f,password:e.target.value}))}/></div>
+        <div className="fld"><label className="lbl">Role</label><select className="inp" value={form.role} onChange={e=>setForm(f=>({...f,role:e.target.value}))}>{["student","teacher","hod","admin"].map(r=><option key={r}>{r}</option>)}</select></div>
+        <div className="fld"><label className="lbl">Department</label><input className="inp" value={form.dept} onChange={e=>setForm(f=>({...f,dept:e.target.value}))}/></div>
+        <div className="fld"><label className="lbl">Section</label><select className="inp" value={form.section} onChange={e=>setForm(f=>({...f,section:e.target.value}))}>{["A","B","C","D"].map(s=><option key={s}>{s}</option>)}</select></div>
+        <div className="fld"><label className="lbl">Semester</label><select className="inp" value={form.semester} onChange={e=>setForm(f=>({...f,semester:+e.target.value}))}>{[1,2,3,4,5,6,7,8].map(s=><option key={s} value={s}>Sem {s}</option>)}</select></div>
+        <div className="fld"><label className="lbl">Roll No</label><input className="inp" value={form.rollNo} onChange={e=>setForm(f=>({...f,rollNo:e.target.value}))}/></div>
+        <div className="fld"><label className="lbl">Phone</label><input className="inp" value={form.phone} onChange={e=>setForm(f=>({...f,phone:e.target.value}))}/></div>
+        <div className="fld"><label className="lbl">Subject</label><input className="inp" value={form.subject} onChange={e=>setForm(f=>({...f,subject:e.target.value}))}/></div>
+      </div>
+      <div className="r g8 mt12">
+        <button className="btn btn-p" onClick={save}><Ico n="check" s={13}/>{editId?"Update":"Add"} User</button>
+        {editId&&<button className="btn btn-gh" onClick={()=>{setForm({...blank});setEditId(null);}}>Cancel</button>}
+      </div>
+    </div>
+  );
+ 
+  return(
+    <div>
+      <div className="card mb16">
+        <div className="r jb w g8 mb14">
+          <div className="ct" style={{marginBottom:0}}><Ico n="shield" s={16} col="var(--O)"/>{editId?"Edit User":"Add New User"}</div>
+          {!editId&&<button className="btn btn-l btn-sm" onClick={()=>setModal({title:"Add User",content:formUI})}><Ico n="plus" s={13}/>Quick Add</button>}
+        </div>
+        {formUI}
+      </div>
+ 
+      <div className="card tw">
+        <div className="ct"><Ico n="users" s={16} col="var(--P)"/>All Users ({users.length})</div>
+        <table>
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Dept</th><th>Phone</th><th>Actions</th></tr></thead>
+          <tbody>
+            {users.map(u=>(
+              <tr key={u.id}>
+                <td className="fw6">{u.name}</td>
+                <td className="c2">{u.email}</td>
+                <td><span className={`bd ${u.role==="admin"?"br":u.role==="hod"?"by":u.role==="teacher"?"bb":"bp"}`}>{u.role.toUpperCase()}</span></td>
+                <td className="c2">{u.dept||"—"}</td>
+                <td className="c2">{u.phone||"—"}</td>
+                <td>
+                  <div className="r g4">
+                    <button className="btn btn-l btn-xs" onClick={()=>edit(u)}><Ico n="eye" s={11}/>Edit</button>
+                    <button className="btn btn-d btn-xs" onClick={()=>del(u.id)}><Ico n="trash" s={11}/></button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+ 
+/* ═══════════════════════════════════════════
+   ADMIN: COLLEGE INFO
+═══════════════════════════════════════════ */
+function AdminCollegeInfo({ctx:{data,setData,notify}}) {
+  const info=data.collegeInfo||{name:"SSIPMT",address:"",phone:"",email:"",principal:"",established:"",university:"",examDates:"",academicYear:"",departments:""};
+  const [form,setForm]=useState({...info});
+  const fields=[
+    ["name","College Name"],["address","Address"],["phone","Phone"],["email","Email"],
+    ["principal","Principal Name"],["established","Established Year"],
+    ["university","Affiliated University"],["examDates","Exam Dates"],
+    ["academicYear","Academic Year"],["departments","Departments"]
+  ];
+  const save=()=>{setData(p=>({...p,collegeInfo:{...form}}));notify("College info updated!");};
+  return(
+    <div>
+      <div className="card mb16">
+        <div className="ct"><Ico n="globe" s={16} col="var(--P)"/>Edit College Information</div>
+        <div className="g2">
+          {fields.map(([k,lbl])=>(
+            <div key={k} className="fld">
+              <label className="lbl">{lbl}</label>
+              <input className="inp" value={form[k]||""} onChange={e=>setForm(f=>({...f,[k]:e.target.value}))}/>
+            </div>
+          ))}
+        </div>
+        <button className="btn btn-p mt12" onClick={save}><Ico n="check" s={13}/>Save Changes</button>
+      </div>
+ 
+      <div className="card">
+        <div className="ct"><Ico n="eye" s={16} col="var(--G)"/>Live Preview</div>
+        <div style={{background:"linear-gradient(135deg,var(--PL),#e0e7ff)",borderRadius:14,padding:20,border:"1.5px solid var(--PM)"}}>
+          <div className="fw8 f16 mb8" style={{color:"var(--P)"}}>{form.name||"College Name"}</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            {fields.map(([k,lbl])=>(
+              <div key={k} className="ii">
+                <label>{lbl}</label>
+                <span>{form[k]||"—"}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+ 
+/* ═══════════════════════════════════════════
+   ADMIN: SUBJECTS
+═══════════════════════════════════════════ */
+function AdminSubjects({ctx:{data,setData,notify}}) {
+  const subjects=data.subjects||SUBS;
+  const [newSub,setNewSub]=useState("");
+  const add=()=>{
+    if(!newSub.trim())return;
+    if(subjects.includes(newSub.trim())){notify("Subject already exists!","e");return;}
+    setData(p=>({...p,subjects:[...(p.subjects||SUBS),newSub.trim()]}));
+    notify("Subject added!");
+    setNewSub("");
+  };
+  const del=sub=>{setData(p=>({...p,subjects:(p.subjects||SUBS).filter(s=>s!==sub)}));notify("Subject removed","e");};
+  return(
+    <div>
+      <div className="card mb16">
+        <div className="ct"><Ico n="plus" s={16} col="var(--P)"/>Add Subject</div>
+        <div className="r g8">
+          <input className="inp" style={{flex:1}} placeholder="Enter subject name" value={newSub} onChange={e=>setNewSub(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()}/>
+          <button className="btn btn-p" onClick={add}><Ico n="plus" s={13}/>Add</button>
+        </div>
+      </div>
+ 
+      <div className="card">
+        <div className="ct"><Ico n="book" s={16} col="var(--P)"/>All Subjects ({subjects.length})</div>
+        {subjects.map((s,i)=>(
+          <div key={s} className="r jb g8" style={{padding:"12px 0",borderBottom:"1px solid var(--bdr)"}}>
+            <div className="r g10">
+              <span className="bd bp f9">#{i+1}</span>
+              <span className="fw6 f13">{s}</span>
+            </div>
+            <button className="btn btn-d btn-xs" onClick={()=>del(s)}><Ico n="trash" s={11}/>Remove</button>
+          </div>
+        ))}
+        <div className="al al-i mt12"><Ico n="bell" s={14}/>Subjects are used in attendance, marks, notes, and PYQ dropdowns across the portal.</div>
+      </div>
     </div>
   );
 }
