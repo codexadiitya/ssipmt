@@ -741,6 +741,11 @@ export default function App() {
           <div className="page fu" key={page} style={{animation:"fu .32s cubic-bezier(.22,1,.36,1) forwards"}}>
             <Router page={page} ctx={ctx}/>
           </div>
+          
+          {/* FOOTER */}
+          <div style={{textAlign:"center", paddingBottom:"20px", fontSize:"12px", color:"var(--T3)"}}>
+            Made by Moi
+          </div>
         </div>
  
         {/* FLOATING TOAST */}
