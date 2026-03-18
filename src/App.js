@@ -1064,8 +1064,6 @@ function Att({ctx:{user,data}}) {
       <div className="sg mb16">
         {Object.entries(att).map(([sub,val])=>{
           const p=pct(val.present,val.total);
-          const col=gcol(p);
-          const bg=p>=75?"var(--GL)":p>=60?"var(--OL)":"var(--RL)";
           const cls=p>=75?"pg":p>=60?"py":"pr";
           return(
             <div key={sub} className="st" style={{borderTop:`3px solid ${col}`}}>
