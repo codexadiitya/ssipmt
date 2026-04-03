@@ -1,4 +1,6 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
+import QRCode from 'qrcode';
+import { Html5QrcodeScanner } from 'html5-qrcode';
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip,
   ResponsiveContainer, AreaChart, Area, Cell
@@ -15,6 +17,8 @@ const USERS = [
 ];
 const SUBS = ["Data Structures","Operating Systems","DBMS","Computer Networks","Engineering Maths"];
 const CC = ["#8b5cf6","#10b981","#f59e0b","#3b82f6","#f43f5e","#ec4899"];
+const SEM_START = new Date("2026-01-15");
+const ALLOWED_SUBNET = "192.168.";
 const STUDENTS = [
   {rollNo:"CSE21001",name:"Rahul Sharma",   cgpa:8.4, section:"A"},
   {rollNo:"CSE21002",name:"Priya Patel",    cgpa:9.1, section:"A"},
@@ -1069,70 +1073,281 @@ function TT({ctx:{user,data}}) {
 }
  
 /* ═══════════════════════════════════════════
-   STUDENT: ATTENDANCE
+   STUDENT: ATTENDANCE (QR System)
 ═══════════════════════════════════════════ */
-function Att({ctx:{user,data}}) {
+function Att({ctx:{user,data,setData,notify}}) {
   const att=data.attendance[user.rollNo]||{};
-  return(
-    <div>
-      <div className="sg mb16">
-        {Object.entries(att).map(([sub,val])=>{
-          const p=pct(val.present,val.total);
-          const col=p>=75?"var(--G)":p>=60?"var(--O)":"var(--R)";
-          const cls=p>=75?"pg":p>=60?"py":"pr";
-          return(
-            <div key={sub} className="st" style={{borderTop:`3px solid ${col}`}}>
-              <div className="st-l mb8">{sub.split(" ").slice(0,2).join(" ")}</div>
-              <div className="fw8" style={{fontSize:30,color:col,lineHeight:1}}>{p}%</div>
-              <div className="c2 f11 mt6">{val.present}/{val.total} classes</div>
-              <Pb v={p} cls={cls} h={6}/>
-            </div>
-          );
-        })}
-      </div>
- 
-      {Object.entries(att).map(([sub,val])=>{
-        const p=pct(val.present,val.total);
-        const need=p<75?Math.ceil((0.75*val.total-val.present)/0.25):0;
-        const bunk=p>75?Math.floor((val.present-0.75*val.total)/0.75):0;
-        return(
-          <div key={sub} className="card mb12">
-            <div className="r jb g8 mb14">
-              <div className="ct" style={{marginBottom:0}}><Ico n="check" s={16} col={p>=75?"var(--G)":"var(--R)"}/>{sub}</div>
-              <span className={`bd ${p>=75?"bg":"br"}`}>{p}% Attendance</span>
-            </div>
-            {/* Stats row */}
-            <div className="r g10 w mb12">
-              {[["Present",val.present,"var(--G)"],["Absent",val.total-val.present,"var(--R)"],["Total",val.total,"var(--P)"]].map(([k,v,c])=>(
-                <div key={k} style={{background:"var(--bg)",borderRadius:10,padding:"10px 14px",flex:1,textAlign:"center",minWidth:74}}>
-                  <div className="c2 f10 fw7 mb4" style={{textTransform:"uppercase",letterSpacing:.4}}>{k}</div>
-                  <div className="fw8 f16" style={{color:c}}>{v}</div>
+  const subs=data.subjects||SUBS;
+  const [view,setView]=useState("cards");
+  const [selSub,setSelSub]=useState("");
+  const [calMonth,setCalMonth]=useState(new Date().getMonth());
+  const [calYear,setCalYear]=useState(new Date().getFullYear());
+  const [scanStep,setScanStep]=useState(1);
+  const [scanMsg,setScanMsg]=useState("");
+  const scanRef=useRef(null);
+  const scannerRef=useRef(null);
+
+  const getClassDates=(hist)=>{
+    const dates=[];
+    let d=new Date(SEM_START);
+    for(let i=0;i<hist.length;i++){
+      while(d.getDay()===0||d.getDay()===6) d=new Date(d.getTime()+86400000);
+      dates.push({date:new Date(d),val:hist[i]});
+      d=new Date(d.getTime()+86400000);
+    }
+    return dates;
+  };
+
+  const checkWifi=async()=>{
+    setScanStep(1);
+    setScanMsg("Checking WiFi connection...");
+    try{
+      const res=await fetch('https://api.ipify.org?format=json');
+      const json=await res.json();
+      if(json.ip&&json.ip.startsWith(ALLOWED_SUBNET)){
+        setScanStep(2);
+      } else {
+        setScanStep(4);
+        setScanMsg("\u274c Not on College WiFi \u2014 Connect to SSIPMT_WIFI and try again");
+      }
+    }catch(e){
+      setScanStep(4);
+      setScanMsg("Cannot verify WiFi connection. Please check your internet.");
+    }
+  };
+
+  const validateToken=(scannedValue)=>{
+    const today=new Date().toISOString().slice(0,10);
+    const currentSlot=Math.floor(Date.now()/5000);
+    for(let i=0;i<36;i++){
+      const testToken=btoa(selSub+today+(currentSlot-i));
+      if(scannedValue===testToken){
+        const subAtt=att[selSub];
+        if(subAtt){
+          const classDates=getClassDates(subAtt.hist);
+          const alreadyToday=classDates.some(cd=>cd.date.toISOString().slice(0,10)===today&&cd.val===1);
+          if(alreadyToday){setScanStep(3);setScanMsg("already");return;}
+        }
+        setData(prev=>{
+          const a={...prev.attendance};
+          if(!a[user.rollNo]) a[user.rollNo]={};
+          const sa=a[user.rollNo][selSub]||{total:0,present:0,hist:[]};
+          a[user.rollNo]={...a[user.rollNo],[selSub]:{total:sa.total+1,present:sa.present+1,hist:[...sa.hist,1]}};
+          return{...prev,attendance:a};
+        });
+        setScanStep(3);setScanMsg("success");
+        notify("Attendance marked for "+selSub+"!","s");
+        return;
+      }
+    }
+    setScanStep(4);
+    setScanMsg("\u274c Invalid or Expired QR \u2014 Ask teacher to refresh");
+  };
+
+  useEffect(()=>{
+    if(view==="scanner"&&scanStep===2&&scanRef.current&&!scannerRef.current){
+      const scanner=new Html5QrcodeScanner("qr-reader",{fps:10,qrbox:{width:250,height:250},rememberLastUsedCamera:false},{verbose:false});
+      scanner.render((decoded)=>{
+        validateToken(decoded);
+        try{scanner.clear();}catch(ex){}
+        scannerRef.current=null;
+      },()=>{});
+      scannerRef.current=scanner;
+    }
+    return()=>{
+      if(scannerRef.current){try{scannerRef.current.clear();}catch(ex){} scannerRef.current=null;}
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[view,scanStep]);
+
+  if(view==="cards"){
+    return(
+      <div>
+        <div className="al al-i mb16"><Ico n="check" s={14}/>Your Attendance Dashboard \u2014 Tap a subject for details or scan QR</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:14}}>
+          {subs.map((sub)=>{
+            const val=att[sub]||{total:0,present:0,hist:[]};
+            const p=val.total?pct(val.present,val.total):0;
+            const col=p>=75?"var(--G)":p>=60?"var(--O)":"var(--R)";
+            const r=36,circ=2*Math.PI*r,dash=(p/100)*circ;
+            return(
+              <div key={sub} className="card" style={{borderTop:`3px solid ${col}`,cursor:"default"}}>
+                <div className="r g12 mb12">
+                  <div style={{position:"relative",width:80,height:80,flexShrink:0}}>
+                    <svg width="80" height="80" style={{transform:"rotate(-90deg)"}}>
+                      <circle cx="40" cy="40" r={r} fill="none" stroke="var(--bdr)" strokeWidth="6"/>
+                      <circle cx="40" cy="40" r={r} fill="none" stroke={col} strokeWidth="6" strokeDasharray={`${dash} ${circ}`} strokeLinecap="round" style={{transition:"stroke-dasharray 1s ease"}}/>
+                    </svg>
+                    <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+                      <div style={{fontSize:18,fontWeight:900,color:col,lineHeight:1}}>{p}%</div>
+                    </div>
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div className="fw7 f14 mb4" style={{color:"var(--T)"}}>{sub}</div>
+                    <div className="c2 f11">{val.present}/{val.total} classes</div>
+                    <div className="r g6 mt6">
+                      <span className={`bd ${p>=75?"bg":p>=60?"by":"br"}`}>{p>=75?"Safe":p>=60?"Warning":"Danger"}</span>
+                    </div>
+                  </div>
                 </div>
-              ))}
-            </div>
-            <Pb v={p} cls={p>=75?"pg":p>=60?"py":"pr"}/>
-            {p<75&&<div className="al al-e mt8"><Ico n="fire" s={14}/>Need <strong>&nbsp;{need} more classes&nbsp;</strong> to reach 75% minimum</div>}
-            {bunk>0&&<div className="al al-s mt8"><Ico n="check" s={14}/>Can miss <strong>&nbsp;{bunk} more classes&nbsp;</strong> and stay above 75%</div>}
-            {val.hist&&(
-              <div className="mt12">
-                <div className="c2 f10 fw7 mb8" style={{textTransform:"uppercase",letterSpacing:.5}}>Attendance History ({val.hist.length} classes)</div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(10,1fr)",gap:4}}>
-                  {val.hist.map((h,i)=>(
-                    <div key={i} title={h?"Present":"Absent"} style={{
-                      aspectRatio:1,borderRadius:4,
-                      background:h?"var(--GL)":"var(--RL)",
-                      display:"flex",alignItems:"center",justifyContent:"center",
-                      fontSize:9,fontWeight:800,color:h?"var(--G)":"var(--R)",
-                    }}>{h?"P":"A"}</div>
-                  ))}
+                <div className="r g8">
+                  <button className="btn btn-l btn-sm" style={{flex:1}} onClick={()=>{setSelSub(sub);setView("calendar");setCalMonth(new Date().getMonth());setCalYear(new Date().getFullYear());}}><Ico n="calendar" s={13}/>Calendar</button>
+                  <button className="btn btn-p btn-sm" style={{flex:1}} onClick={()=>{setSelSub(sub);setScanStep(0);setScanMsg("");setView("scanner");checkWifi();}}>Scan QR</button>
                 </div>
               </div>
-            )}
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  if(view==="calendar"&&selSub){
+    const val=att[selSub]||{total:0,present:0,hist:[]};
+    const p=val.total?pct(val.present,val.total):0;
+    const need=p<75?Math.ceil((0.75*val.total-val.present)/0.25):0;
+    const bunk=p>75?Math.floor((val.present-0.75*val.total)/0.75):0;
+    const classDates=getClassDates(val.hist);
+    const firstDay=new Date(calYear,calMonth,1);
+    const lastDay=new Date(calYear,calMonth+1,0);
+    const daysInMonth=lastDay.getDate();
+    const startDow=firstDay.getDay();
+    const monthNames=["January","February","March","April","May","June","July","August","September","October","November","December"];
+    const today=new Date();
+    const cells=[];
+    for(let i=0;i<startDow;i++) cells.push(null);
+    for(let d=1;d<=daysInMonth;d++) cells.push(d);
+
+    return(
+      <div>
+        <button className="btn btn-gh btn-sm mb16" onClick={()=>setView("cards")}><Ico n="x" s={13}/> Back to Subjects</button>
+        <div className="card mb16">
+          <div className="r jb mb14">
+            <div className="ct" style={{marginBottom:0}}><Ico n="calendar" s={16} col="var(--P)"/>{selSub} \u2014 Attendance Calendar</div>
+            <span className={`bd ${p>=75?"bg":"br"}`}>{p}%</span>
           </div>
-        );
-      })}
-    </div>
-  );
+          <div className="r jc g12 mb16">
+            <button className="btn btn-gh btn-xs" onClick={()=>{if(calMonth===0){setCalMonth(11);setCalYear(y=>y-1);}else setCalMonth(m=>m-1);}}>Prev</button>
+            <span className="fw8 f14">{monthNames[calMonth]} {calYear}</span>
+            <button className="btn btn-gh btn-xs" onClick={()=>{if(calMonth===11){setCalMonth(0);setCalYear(y=>y+1);}else setCalMonth(m=>m+1);}}>Next</button>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,textAlign:"center"}}>
+            {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>(
+              <div key={d} className="f10 fw8 c3" style={{padding:"6px 0",letterSpacing:.5}}>{d}</div>
+            ))}
+            {cells.map((day,i)=>{
+              if(day===null) return <div key={`e${i}`}/>;
+              const cellDate=new Date(calYear,calMonth,day);
+              const isToday=cellDate.toDateString()===today.toDateString();
+              const isFuture=cellDate>today;
+              const classEntry=classDates.find(cd=>cd.date.toDateString()===cellDate.toDateString());
+              let cbg="transparent",color="var(--T)",indicator=null;
+              if(classEntry){
+                if(classEntry.val===1){cbg="var(--GL)";color="var(--G)";indicator="\ud83d\udfe2";}
+                else{cbg="var(--RL)";color="var(--R)";indicator="\ud83d\udd34";}
+              } else if(isFuture){cbg="transparent";color="var(--T3)";}
+              else if(cellDate.getDay()===0||cellDate.getDay()===6){cbg="transparent";color="var(--T3)";}
+              return(
+                <div key={i} style={{padding:"8px 2px",borderRadius:10,background:isToday?"var(--PL)":cbg,border:isToday?"1.5px solid var(--PM)":"1.5px solid transparent",minHeight:40,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2}}>
+                  <div style={{fontSize:12,fontWeight:isToday?800:600,color:isToday?"var(--P)":color}}>{day}</div>
+                  {indicator&&<div style={{fontSize:8,lineHeight:1}}>{indicator}</div>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        <div className="card">
+          <div className="ct"><Ico n="chart" s={16} col="var(--P)"/>Attendance Summary</div>
+          <div className="r g10 w mb12">
+            {[["Total Classes",val.total,"var(--P)"],["Present",val.present,"var(--G)"],["Absent",val.total-val.present,"var(--R)"],["Percentage",p+"%",p>=75?"var(--G)":"var(--R)"]].map(([k,v,c])=>(
+              <div key={k} style={{background:"var(--bg)",borderRadius:10,padding:"12px 14px",flex:1,textAlign:"center",minWidth:80}}>
+                <div className="c2 f10 fw7 mb4" style={{textTransform:"uppercase",letterSpacing:.4}}>{k}</div>
+                <div className="fw8 f16" style={{color:c}}>{v}</div>
+              </div>
+            ))}
+          </div>
+          <Pb v={p} cls={p>=75?"pg":p>=60?"py":"pr"}/>
+          {need>0&&<div className="al al-e mt8"><Ico n="fire" s={14}/>Need <strong>&nbsp;{need} more classes&nbsp;</strong> to reach 75%</div>}
+          {bunk>0&&<div className="al al-s mt8"><Ico n="check" s={14}/>Can safely miss <strong>&nbsp;{bunk} more classes&nbsp;</strong> (bunk meter)</div>}
+          {val.hist&&val.hist.length>0&&(
+            <div className="mt12">
+              <div className="c2 f10 fw7 mb8" style={{textTransform:"uppercase",letterSpacing:.5}}>Attendance History ({val.hist.length} classes)</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(10,1fr)",gap:4}}>
+                {val.hist.map((h,i)=>(
+                  <div key={i} title={h?"Present":"Absent"} style={{aspectRatio:1,borderRadius:4,background:h?"var(--GL)":"var(--RL)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:800,color:h?"var(--G)":"var(--R)"}}>{h?"P":"A"}</div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if(view==="scanner"){
+    return(
+      <div>
+        <button className="btn btn-gh btn-sm mb16" onClick={()=>{setView("cards");if(scannerRef.current){try{scannerRef.current.clear();}catch(ex){} scannerRef.current=null;}}}><Ico n="x" s={13}/> Back to Subjects</button>
+        <div className="card" style={{textAlign:"center",maxWidth:480,margin:"0 auto"}}>
+          <div className="ct" style={{justifyContent:"center"}}><Ico n="check" s={16} col="var(--P)"/>QR Attendance \u2014 {selSub}</div>
+          {scanStep===1&&(
+            <div style={{padding:"30px 0"}}>
+              <div className="ld" style={{margin:"0 auto 16px",borderColor:"var(--PM)",borderTopColor:"var(--P)",width:32,height:32}}/>
+              <div className="fw6 f14 c2">{scanMsg||"Checking WiFi..."}</div>
+            </div>
+          )}
+          {scanStep===2&&(
+            <div>
+              <div className="al al-i mb12"><Ico n="bell" s={14}/>Point your camera at the QR code shown by your teacher</div>
+              <div id="qr-reader" ref={scanRef} style={{borderRadius:12,overflow:"hidden",margin:"0 auto",maxWidth:350}}/>
+              <div className="c3 f11 mt12">Camera is active \u2014 scanning for QR code...</div>
+            </div>
+          )}
+          {scanStep===3&&(
+            <div style={{padding:"30px 0"}}>
+              {scanMsg==="already"?(
+                <>
+                  <div style={{fontSize:60,marginBottom:12}}>{"\u2705"}</div>
+                  <div className="fw8 f16" style={{color:"var(--G)"}}>Already marked for today!</div>
+                  <div className="c2 f13 mt8">Your attendance for {selSub} was already recorded today.</div>
+                </>
+              ):(
+                <>
+                  <div style={{position:"relative",display:"inline-block"}}>
+                    {[...Array(12)].map((_,i)=>(
+                      <div key={i} style={{
+                        position:"absolute",width:8,height:8,borderRadius:"50%",
+                        background:["var(--P)","var(--G)","var(--O)","var(--R)","var(--B)","#ec4899"][i%6],
+                        top:"50%",left:"50%",
+                        animation:`confetti-${i%4} 1s ease-out forwards`,
+                        animationDelay:`${i*0.05}s`,opacity:0
+                      }}/>
+                    ))}
+                    <style>{`@keyframes confetti-0{0%{transform:translate(0,0);opacity:1}100%{transform:translate(40px,-60px);opacity:0}}@keyframes confetti-1{0%{transform:translate(0,0);opacity:1}100%{transform:translate(-40px,-50px);opacity:0}}@keyframes confetti-2{0%{transform:translate(0,0);opacity:1}100%{transform:translate(50px,30px);opacity:0}}@keyframes confetti-3{0%{transform:translate(0,0);opacity:1}100%{transform:translate(-50px,40px);opacity:0}}`}</style>
+                    <div style={{fontSize:72,marginBottom:16,animation:"pop .5s cubic-bezier(.22,1,.36,1)"}}>{"\u2705"}</div>
+                  </div>
+                  <div className="fw8 f16" style={{color:"var(--G)"}}>Attendance Marked!</div>
+                  <div className="c2 f14 mt6">{selSub}</div>
+                  <div className="c3 f12 mt4">{new Date().toLocaleDateString("en-IN",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}</div>
+                  <div className="bd bg mt12" style={{fontSize:12,padding:"6px 14px"}}>Successfully recorded</div>
+                </>
+              )}
+            </div>
+          )}
+          {scanStep===4&&(
+            <div style={{padding:"30px 0"}}>
+              <div style={{fontSize:52,marginBottom:12}}>{"\u274c"}</div>
+              <div className="fw8 f14" style={{color:"var(--R)"}}>{scanMsg}</div>
+              <div className="c3 f11 mt8">Wrong? Contact your teacher</div>
+              <button className="btn btn-l mt16" onClick={()=>{setScanStep(0);checkWifi();}}>Try Again</button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return null;
 }
  
 /* ═══════════════════════════════════════════
@@ -1647,24 +1862,52 @@ function TDash({user,data,setPage}) {
 }
  
 /* ═══════════════════════════════════════════
-   TEACHER: TAKE ATTENDANCE
+   TEACHER: TAKE ATTENDANCE (QR System)
 ═══════════════════════════════════════════ */
 function TeachAtt({ctx:{data,setData,notify}}) {
+  const [tab,setTab]=useState("qr");
   const [sub,setSub]=useState("Data Structures");
-  const [att,setAtt]=useState({});
-  const [saved,setSaved]=useState(false);
   const [sec,setSec]=useState("All");
   const subs=data.subjects||SUBS;
+  const [qrUrl,setQrUrl]=useState("");
+  const [qrSession,setQrSession]=useState(false);
+  const [qrTimer,setQrTimer]=useState(180);
+  const [qrPresent,setQrPresent]=useState(0);
+  const qrIntervalRef=useRef(null);
+  const timerRef=useRef(null);
+  const [att,setAtt]=useState({});
+  const [saved,setSaved]=useState(false);
   const filtered=sec==="All"?data.students:data.students.filter(s=>s.section===sec);
   const present=filtered.filter(s=>att[s.rollNo]!=="A").length;
- 
-  const markAll=v=>{
-    const o={...att};
-    filtered.forEach(s=>{o[s.rollNo]=v;});
-    setAtt(o);
+  const [emerText,setEmerText]=useState("");
+  const [emerParsed,setEmerParsed]=useState(null);
+
+  const generateQR=useCallback(()=>{
+    const today=new Date().toISOString().slice(0,10);
+    const token=btoa(sub+today+Math.floor(Date.now()/5000));
+    QRCode.toDataURL(token,{width:300,margin:2,color:{dark:"#1e1b4b",light:"#ffffff"}})
+      .then(url=>setQrUrl(url)).catch(()=>{});
+  },[sub]);
+
+  const startQRSession=()=>{
+    setQrSession(true);setQrTimer(180);setQrPresent(0);generateQR();
+    qrIntervalRef.current=setInterval(()=>generateQR(),5000);
+    timerRef.current=setInterval(()=>{
+      setQrTimer(t=>{
+        if(t<=1){clearInterval(qrIntervalRef.current);clearInterval(timerRef.current);setQrSession(false);return 0;}
+        return t-1;
+      });
+    },1000);
   };
- 
-  const submit=()=>{
+  const stopQRSession=()=>{
+    setQrSession(false);
+    if(qrIntervalRef.current) clearInterval(qrIntervalRef.current);
+    if(timerRef.current) clearInterval(timerRef.current);
+  };
+  useEffect(()=>{return()=>{if(qrIntervalRef.current) clearInterval(qrIntervalRef.current);if(timerRef.current) clearInterval(timerRef.current);};},[]);
+
+  const markAll=v=>{const o={...att};filtered.forEach(s=>{o[s.rollNo]=v;});setAtt(o);};
+  const submitManual=()=>{
     filtered.forEach(s=>{
       const isP=att[s.rollNo]!=="A";
       setData(prev=>{
@@ -1675,62 +1918,193 @@ function TeachAtt({ctx:{data,setData,notify}}) {
         return{...prev,attendance:a};
       });
     });
-    setSaved(true);
-    notify(`Attendance saved for ${sub}!`);
+    setSaved(true);notify("Attendance saved for "+sub+"!");
   };
- 
+  const copyAbsent=()=>{
+    const absent=filtered.filter(s=>att[s.rollNo]==="A").map(s=>s.name+" ("+s.rollNo+")");
+    if(!absent.length){notify("No absent students!","e");return;}
+    navigator.clipboard.writeText(absent.join("\n")).then(()=>notify("Absent list copied!","s")).catch(()=>notify("Copy failed","e"));
+  };
+  const parseEmergency=()=>{
+    const rolls=emerText.split(/[,\n]+/).map(r=>r.trim().toUpperCase()).filter(Boolean);
+    const matched=[],unmatched=[];
+    rolls.forEach(r=>{const found=data.students.find(s=>s.rollNo.toUpperCase()===r);if(found) matched.push(found);else unmatched.push(r);});
+    setEmerParsed({matched,unmatched});
+  };
+  const submitEmergency=()=>{
+    if(!emerParsed||!emerParsed.matched.length)return;
+    const matchedRolls=new Set(emerParsed.matched.map(s=>s.rollNo));
+    const allStudents=sec==="All"?data.students:data.students.filter(s=>s.section===sec);
+    allStudents.forEach(s=>{
+      const isP=matchedRolls.has(s.rollNo);
+      setData(prev=>{
+        const a={...prev.attendance};if(!a[s.rollNo]) a[s.rollNo]={};
+        const sa=a[s.rollNo][sub]||{total:0,present:0,hist:[]};
+        a[s.rollNo]={...a[s.rollNo],[sub]:{total:sa.total+1,present:sa.present+(isP?1:0),hist:[...sa.hist,isP?1:0]}};
+        return{...prev,attendance:a};
+      });
+    });
+    notify("Emergency attendance saved! "+emerParsed.matched.length+" present","s");
+    setEmerText("");setEmerParsed(null);
+  };
+  const printSheet=()=>{
+    const allStudents=sec==="All"?data.students:data.students.filter(s=>s.section===sec);
+    const matchedRolls=emerParsed?new Set(emerParsed.matched.map(s=>s.rollNo)):new Set();
+    const rows=allStudents.map((s,i)=>"<tr><td>"+(i+1)+"</td><td>"+s.rollNo+"</td><td>"+s.name+"</td><td>"+s.section+"</td><td style='color:"+(matchedRolls.has(s.rollNo)?"green":"red")+";font-weight:bold'>"+(matchedRolls.has(s.rollNo)?"P":"A")+"</td></tr>").join("");
+    const html="<html><head><title>Attendance - "+sub+"</title><style>body{font-family:sans-serif;padding:20px}h2{text-align:center}table{width:100%;border-collapse:collapse;margin-top:16px}th,td{border:1px solid #ccc;padding:8px 12px;text-align:left}th{background:#f3f4f6}</style></head><body><h2>SSIPMT Attendance Sheet</h2><p><strong>Subject:</strong> "+sub+" | <strong>Date:</strong> "+new Date().toLocaleDateString()+" | <strong>Section:</strong> "+sec+"</p><table><thead><tr><th>#</th><th>Roll No</th><th>Name</th><th>Sec</th><th>Status</th></tr></thead><tbody>"+rows+"</tbody></table></body></html>";
+    const w=window.open("","_blank");w.document.write(html);w.document.close();w.print();
+  };
+  const downloadQR=()=>{if(!qrUrl)return;const link=document.createElement("a");link.href=qrUrl;link.download="QR_"+sub+"_"+new Date().toISOString().slice(0,10)+".png";link.click();};
+  const fmtTime=s=>Math.floor(s/60)+":"+String(s%60).padStart(2,"0");
+
   return(
     <div>
       <div className="card mb16">
-        <div className="r jb w g12 mb16">
-          <div className="r g12 w">
-            <div className="fld" style={{marginBottom:0}}>
-              <label className="lbl">Subject</label>
-              <select className="inp" style={{width:210}} value={sub} onChange={e=>{setSub(e.target.value);setSaved(false);setAtt({});}}>
-                {subs.map(s=><option key={s}>{s}</option>)}
-              </select>
-            </div>
-            <div className="fld" style={{marginBottom:0}}>
-              <label className="lbl">Section</label>
-              <div className="r g4">
-                {["All","A","B","C","D"].map(s=>(
-                  <button key={s} className={`btn btn-xs ${sec===s?"btn-p":"btn-gh"}`} onClick={()=>setSec(s)}>{s}</button>
-                ))}
-              </div>
-            </div>
+        <div className="r g12 w">
+          <div className="fld" style={{marginBottom:0}}>
+            <label className="lbl">Subject</label>
+            <select className="inp" style={{width:210}} value={sub} onChange={e=>{setSub(e.target.value);setSaved(false);setAtt({});stopQRSession();setEmerParsed(null);}}>
+              {subs.map(s=><option key={s}>{s}</option>)}
+            </select>
           </div>
-          <div style={{background:"var(--PL)",border:"1.5px solid var(--PM)",borderRadius:12,padding:"10px 18px",display:"flex",gap:16,alignItems:"center"}}>
-            <div className="tc"><div className="fw8 f22 cg">{present}</div><div className="c2 f10">Present</div></div>
-            <div className="c3 f14">/</div>
-            <div className="tc"><div className="fw8 f22">{filtered.length}</div><div className="c2 f10">Total</div></div>
+          <div className="fld" style={{marginBottom:0}}>
+            <label className="lbl">Section</label>
+            <div className="r g4">
+              {["All","A","B","C","D"].map(s=>(
+                <button key={s} className={`btn btn-xs ${sec===s?"btn-p":"btn-gh"}`} onClick={()=>setSec(s)}>{s}</button>
+              ))}
+            </div>
           </div>
         </div>
-        <div className="r g8 mb16">
-          <button className="btn btn-g btn-sm" onClick={()=>markAll("P")}><Ico n="check" s={13}/>All Present</button>
-          <button className="btn btn-d btn-sm" onClick={()=>markAll("A")}><Ico n="x" s={13}/>All Absent</button>
-        </div>
-        {saved&&<div className="al al-s mb12"><Ico n="check" s={14}/>Attendance saved for <strong>{sub}</strong></div>}
-        {filtered.map(s=>(
-          <div key={s.rollNo} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:"1px solid var(--bdr)"}}>
-            <div className="r g10">
-              <div className="av" style={{width:30,height:30,minWidth:30,fontSize:11}}>{s.name[0]}</div>
-              <div>
-                <div className="fw6 f13">{s.name} <span className="bd bz f9">Sec {s.section}</span></div>
-                <div className="c3 f11">{s.rollNo}</div>
-              </div>
-            </div>
-            <div className="atg">
-              <button className={`atb${att[s.rollNo]!=="A"?" P":""}`} onClick={()=>setAtt(a=>({...a,[s.rollNo]:"P"}))}>P</button>
-              <button className={`atb${att[s.rollNo]==="A"?" A":""}`} onClick={()=>setAtt(a=>({...a,[s.rollNo]:"A"}))}>A</button>
-            </div>
-          </div>
-        ))}
-        <button className="btn btn-p mt16" onClick={submit}><Ico n="check" s={14}/>Submit — {present}/{filtered.length} present</button>
       </div>
+      <div className="tabs">
+        <button className={`tab${tab==="qr"?" on":""}`} onClick={()=>{setTab("qr");stopQRSession();}}>QR Mode</button>
+        <button className={`tab${tab==="manual"?" on":""}`} onClick={()=>{setTab("manual");stopQRSession();}}>Manual Mode</button>
+        <button className={`tab${tab==="emergency"?" on":""}`} onClick={()=>{setTab("emergency");stopQRSession();}}>Emergency Mode</button>
+      </div>
+
+      {tab==="qr"&&(
+        <div className="card">
+          <div className="ct"><Ico n="check" s={16} col="var(--P)"/>QR Attendance</div>
+          <div className="al al-w mb12"><Ico n="bell" s={14}/>Students must be on College WiFi (SSIPMT_WIFI) to scan</div>
+          {!qrSession&&qrTimer===0&&(
+            <div style={{textAlign:"center",padding:"30px 0"}}>
+              <div style={{fontSize:48,marginBottom:12}}>{"\u23f0"}</div>
+              <div className="fw8 f16" style={{color:"var(--O)"}}>Session Expired</div>
+              <div className="c2 f13 mt6">3-minute QR session has ended.</div>
+              <div className="r jc g8 mt16"><button className="btn btn-p" onClick={startQRSession}><Ico n="check" s={14}/>Start New Session</button></div>
+              <div className="al al-s mt16"><Ico n="check" s={14}/>{qrPresent} student(s) scanned during this session</div>
+            </div>
+          )}
+          {!qrSession&&qrTimer!==0&&(
+            <div style={{textAlign:"center",padding:"30px 0"}}>
+              <div style={{fontSize:48,marginBottom:16}}>{"\ud83d\udcf1"}</div>
+              <div className="fw7 f14 mb8">Ready to start QR Attendance</div>
+              <div className="c2 f13 mb16">A QR code will be displayed that auto-refreshes every 5 seconds. Students have 3 minutes to scan.</div>
+              <button className="btn btn-p" onClick={startQRSession} style={{padding:"12px 28px",fontSize:15}}><Ico n="check" s={16}/>Start QR Session</button>
+            </div>
+          )}
+          {qrSession&&(
+            <div style={{textAlign:"center"}}>
+              {qrUrl&&<img src={qrUrl} alt="QR Code" style={{width:280,height:280,borderRadius:16,border:"3px solid var(--bdr)",margin:"0 auto 16px",display:"block"}}/>}
+              <div style={{background:qrTimer<=30?"var(--RL)":"var(--PL)",border:"1.5px solid "+(qrTimer<=30?"#fda4af":"var(--PM)"),borderRadius:12,padding:"12px 24px",display:"inline-flex",alignItems:"center",gap:12,marginBottom:16}}>
+                <div style={{fontSize:28,fontWeight:900,color:qrTimer<=30?"var(--R)":"var(--P)",fontFamily:"monospace"}}>{fmtTime(qrTimer)}</div>
+                <div className="c2 f11">remaining</div>
+              </div>
+              <div className="c3 f10 mb12" style={{animation:"pulse 2s infinite"}}>QR refreshes every 5 seconds</div>
+              <div style={{background:"var(--GL)",border:"1.5px solid #6ee7b7",borderRadius:12,padding:"10px 20px",display:"inline-flex",alignItems:"center",gap:10,marginBottom:16}}>
+                <div className="fw8 cg" style={{fontSize:18}}>{qrPresent}</div>
+                <div className="c2 f12">student(s) scanned</div>
+              </div>
+              <div className="r jc g8">
+                <button className="btn btn-l btn-sm" onClick={downloadQR}><Ico n="download" s={13}/>Download QR</button>
+                <button className="btn btn-d btn-sm" onClick={stopQRSession}><Ico n="x" s={13}/>Stop Session</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab==="manual"&&(
+        <div className="card">
+          <div className="r jb w g12 mb16">
+            <div className="ct" style={{marginBottom:0}}><Ico n="check" s={16} col="var(--P)"/>Manual Attendance</div>
+            <div style={{background:"var(--PL)",border:"1.5px solid var(--PM)",borderRadius:12,padding:"10px 18px",display:"flex",gap:16,alignItems:"center"}}>
+              <div className="tc"><div className="fw8 cg" style={{fontSize:22}}>{present}</div><div className="c2 f10">Present</div></div>
+              <div className="c3 f14">/</div>
+              <div className="tc"><div className="fw8" style={{fontSize:22}}>{filtered.length}</div><div className="c2 f10">Total</div></div>
+            </div>
+          </div>
+          <div className="r g8 mb16">
+            <button className="btn btn-g btn-sm" onClick={()=>markAll("P")}><Ico n="check" s={13}/>All Present</button>
+            <button className="btn btn-d btn-sm" onClick={()=>markAll("A")}><Ico n="x" s={13}/>All Absent</button>
+            <button className="btn btn-gh btn-sm" onClick={copyAbsent}><Ico n="folder" s={13}/>Copy Absent List</button>
+          </div>
+          {saved&&<div className="al al-s mb12"><Ico n="check" s={14}/>Attendance saved for <strong>{sub}</strong></div>}
+          {filtered.map(s=>(
+            <div key={s.rollNo} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 0",borderBottom:"1px solid var(--bdr)"}}>
+              <div className="r g10">
+                <div className="av" style={{width:30,height:30,minWidth:30,fontSize:11}}>{s.name[0]}</div>
+                <div>
+                  <div className="fw6 f13">{s.name} <span className="bd bz f9">Sec {s.section}</span></div>
+                  <div className="c3 f11">{s.rollNo}</div>
+                </div>
+              </div>
+              <div className="atg">
+                <button className={`atb${att[s.rollNo]!=="A"?" P":""}`} onClick={()=>setAtt(a=>({...a,[s.rollNo]:"P"}))}>P</button>
+                <button className={`atb${att[s.rollNo]==="A"?" A":""}`} onClick={()=>setAtt(a=>({...a,[s.rollNo]:"A"}))}>A</button>
+              </div>
+            </div>
+          ))}
+          <button className="btn btn-p mt16" onClick={submitManual}><Ico n="check" s={14}/>Submit {present}/{filtered.length} present</button>
+        </div>
+      )}
+
+      {tab==="emergency"&&(
+        <div className="card">
+          <div className="ct"><Ico n="fire" s={16} col="var(--R)"/>Emergency Mode</div>
+          <div className="al al-w mb12"><Ico n="bell" s={14}/>Use when QR/internet is unavailable. Type roll numbers of <strong>&nbsp;present&nbsp;</strong> students below.</div>
+          <div className="fld">
+            <label className="lbl">Roll Numbers (comma or newline separated)</label>
+            <textarea className="inp" rows={5} placeholder={"CSE21001, CSE21003\nCSE21005"} value={emerText} onChange={e=>setEmerText(e.target.value)} style={{fontFamily:"monospace"}}/>
+          </div>
+          <div className="r g8 mb16">
+            <button className="btn btn-p" onClick={parseEmergency}><Ico n="search" s={14}/>Parse and Preview</button>
+            {emerParsed&&<button className="btn btn-l" onClick={printSheet}><Ico n="download" s={14}/>Print Attendance Sheet</button>}
+          </div>
+          {emerParsed&&(
+            <div>
+              <div className="al al-i mb12"><Ico n="check" s={14}/>{emerParsed.matched.length} matched, {emerParsed.unmatched.length} unrecognized</div>
+              {emerParsed.matched.length>0&&(
+                <div className="mb12">
+                  <div className="fw7 f12 cg mb8" style={{textTransform:"uppercase",letterSpacing:.5}}>Matched ({emerParsed.matched.length})</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                    {emerParsed.matched.map(s=>(
+                      <span key={s.rollNo} className="bd bg" style={{padding:"5px 10px"}}>{s.rollNo} - {s.name}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {emerParsed.unmatched.length>0&&(
+                <div className="mb12">
+                  <div className="fw7 f12 cr mb8" style={{textTransform:"uppercase",letterSpacing:.5}}>Unrecognized ({emerParsed.unmatched.length})</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                    {emerParsed.unmatched.map((r,i)=>(
+                      <span key={i} className="bd br" style={{padding:"5px 10px"}}>{r}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <button className="btn btn-g mt12" onClick={submitEmergency}><Ico n="check" s={14}/>Mark These Present ({emerParsed.matched.length} students)</button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
  
+
 /* ═══════════════════════════════════════════
    TEACHER: UPLOAD NOTES
 ═══════════════════════════════════════════ */
